@@ -24,25 +24,16 @@ class SpotifyNotify():
   tmpfile = False
 
   def __init__(self):
-    self.new = None
-    self.prev = None
     self.notifyid = 0
-
-    self.service = None
     self.notifyservice = None
     self.bus = dbus.Bus(dbus.Bus.TYPE_SESSION)
+
+    self.spotify = self.bus.get_object("org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2")
+    self.spotify.connect_to_signal("PropertiesChanged", self.track_changed)
 
   def __del__(self):
     if SpotifyNotify and SpotifyNotify.tmpfile:
       SpotifyNotify.tmpfile.close()
-
-  def get_service(self, fun):
-    try:
-      if not self.service:
-        self.service = self.bus.get_object('com.spotify.qt', '/')
-      return fun(self.service)
-    except:
-      self.service = None
 
   def get_notify_service(self, fun):
     try:
@@ -55,22 +46,10 @@ class SpotifyNotify():
     except:
       self.notifyservice = None
 
-  def poll_change(self):
-    self.new = self.get_service(
-      lambda s: s.get_dbus_method('GetMetadata', 'org.freedesktop.MediaPlayer2')())
-
-    if (self.prev != self.new):
-      if (self.prev):
-        self.track_change(self.new)
-      self.prev = self.new
-
-    return 1
-
-  def track_change(self, *trackChange):
-    if not trackChange[0]:
+  def track_changed(self, interface, changed_props, invalidated_props):
+    metadata = changed_props.get("Metadata", {})
+    if not metadata:
       return
-
-    self.prev = trackChange[0]
 
     trackInfo = {}
     trackMap = {
@@ -78,15 +57,14 @@ class SpotifyNotify():
         'album'     : 'xesam:album',
         'title'     : 'xesam:title',
         'year'      : 'xesam:contentCreated',
-        'trackhash' : 'mpris:trackid',
         'arturl'    : 'mpris:artUrl'
     }
 
     # Fetch the track information for the notification window.
     for key in trackMap:
-      if not trackMap[key] in trackChange[0]:
+      if not trackMap[key] in metadata:
         continue
-      piece = trackChange[0][trackMap[key]]
+      piece = metadata[trackMap[key]]
       if key == 'year':
         piece = str(piece[:4])
       elif isinstance(piece, list):
@@ -137,5 +115,5 @@ if __name__ == "__main__":
   print("spotify-notify v0.7")
 
   DBusGMainLoop(set_as_default=True)
-  gobject.timeout_add(500, SpotifyNotify().poll_change)
+  SpotifyNotify()
   gobject.MainLoop().run()
