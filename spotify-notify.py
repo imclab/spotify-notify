@@ -24,44 +24,49 @@ class SpotifyNotify():
   tmpfile = False
 
   def __init__(self):
-    self.spotifyservice = False
-
-    self.prev = 0
-    self.new = False
+    self.new = None
+    self.prev = None
     self.notifyid = 0
 
-    self.connect()
+    self.service = None
+    self.notifyservice = None
+    self.bus = dbus.Bus(dbus.Bus.TYPE_SESSION)
 
   def __del__(self):
     if SpotifyNotify and SpotifyNotify.tmpfile:
       SpotifyNotify.tmpfile.close()
 
-  def connect(self):
-    self.bus = dbus.Bus(dbus.Bus.TYPE_SESSION)
-
+  def get_service(self, fun):
     try:
-      self.spotifyservice = self.bus.get_object(
-        'com.spotify.qt', '/org/mpris/MediaPlayer2')
-    except Exception, e:
-      self.spotifyservice = False
+      if not self.service:
+        self.service = self.bus.get_object('com.spotify.qt', '/')
+      return fun(self.service)
+    except:
+      self.service = None
 
-  def pollChange(self):
+  def get_notify_service(self, fun):
     try:
-      self.spotifyservice = self.bus.get_object('com.spotify.qt', '/')
-      self.cmd = self.spotifyservice.get_dbus_method(
-        'GetMetadata', 'org.freedesktop.MediaPlayer2')
-      self.new = self.cmd()
-    except Exception, e:
-      pass
+      if not self.notifyservice:
+        self.notifyservice = self.bus.get_object(
+          'org.freedesktop.Notifications', '/org/freedesktop/Notifications')
+        self.notifyservice = dbus.Interface(
+          self.notifyservice, "org.freedesktop.Notifications")
+      return fun(self.notifyservice)
+    except:
+      self.notifyservice = None
+
+  def poll_change(self):
+    self.new = self.get_service(
+      lambda s: s.get_dbus_method('GetMetadata', 'org.freedesktop.MediaPlayer2')())
 
     if (self.prev != self.new):
       if (self.prev):
-        self.trackChange(self.new)
+        self.track_change(self.new)
       self.prev = self.new
 
     return 1
 
-  def trackChange(self, *trackChange):
+  def track_change(self, *trackChange):
     if not trackChange[0]:
       return
 
@@ -92,37 +97,31 @@ class SpotifyNotify():
 
       trackInfo[key] = piece.encode('utf-8')
 
-    # TODO cache cover image
     cover_image = self.retrieveCoverImage(trackInfo)
-    if cover_image == '':
+    if not cover_image:
       cover_image = APPLICATION_DIR + 'icon_spotify.png'
 
-    # Connect to notification interface on DBUS.
-    self.notifyservice = self.bus.get_object(
-      'org.freedesktop.Notifications', '/org/freedesktop/Notifications')
-    self.notifyservice = dbus.Interface(
-      self.notifyservice, "org.freedesktop.Notifications")
     notifyText = "{0}\n{1}".format(trackInfo['title'], trackInfo['album'])
     if len(trackInfo['year']) > 0:
       notifyText += " ({0})".format(trackInfo['year'])
 
     # The second param is the replace id, so get the notify id back,
     # store it, and send it as the replacement on the next call.
-    self.notifyid = self.notifyservice.Notify(
-      "spotify-notify", self.notifyid, cover_image, trackInfo['artist'],
-      notifyText, [], {}, 2)
+    nid = self.notifyid
+    self.notifyid = self.get_notify_service(
+      lambda s: s.Notify("spotify-notify", nid, cover_image, trackInfo['artist'], notifyText, [], {}, 2))
 
+  # TODO cache cover image
   def retrieveCoverImage(self, trackInfo):
     if 'arturl' in trackInfo:
       return self.fetchCoverImage(trackInfo['arturl'])
-
     return "";
 
   def fetchCoverImage(self, url):
     # Close the temporary image file, we are going to make a new one.
     if SpotifyNotify.tmpfile:
       SpotifyNotify.tmpfile.close()
-      SpotifyNotify.tmpfile = False
+      SpotifyNotify.tmpfile = None
 
     try:
       SpotifyNotify.tmpfile = tempfile.NamedTemporaryFile()
@@ -132,14 +131,11 @@ class SpotifyNotify():
       SpotifyNotify.tmpfile.flush()
       return tmpfilename
     except Exception, e:
-      pass
-
-    return ""
+      return ""
 
 if __name__ == "__main__":
   print("spotify-notify v0.7")
 
   DBusGMainLoop(set_as_default=True)
-  SN = SpotifyNotify()
-  gobject.timeout_add(500, SN.pollChange)
+  gobject.timeout_add(500, SpotifyNotify().poll_change)
   gobject.MainLoop().run()
