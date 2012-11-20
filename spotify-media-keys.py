@@ -33,14 +33,14 @@ class MediaKeyHandler():
       "Spotify", 0, dbus_interface="org.gnome.SettingsDaemon.MediaKeys")
 
     self.bus_object.connect_to_signal(
-      "MediaPlayerKeyPressed", self.handleKeyPressed)
+      "MediaPlayerKeyPressed", self.handle_key_pressed)
 
-  def handleKeyPressed(self, *mmkeys):
+  def handle_key_pressed(self, *mmkeys):
     for key in mmkeys:
       if key in self.keys and self.keys[key]:
-        self.executeKey(self.keys[key])
+        self.execute_key(self.keys[key])
 
-  def executeKey(self, key):
+  def execute_key(self, key):
     try:
       if not self.service:
         self.service = self.bus.get_object(
