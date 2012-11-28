@@ -28,8 +28,8 @@ class SpotifyNotify():
     self.notifyservice = None
     self.bus = dbus.Bus(dbus.Bus.TYPE_SESSION)
 
-    self.spotify = self.bus.get_object("org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2")
-    self.spotify.connect_to_signal("PropertiesChanged", self.track_changed)
+    nameownerbus = self.bus.get_object("org.freedesktop.DBus", "/org/freedesktop/DBus")
+    nameownerbus.connect_to_signal("NameOwnerChanged", self.name_owner_changed, arg0="org.mpris.MediaPlayer2.spotify")
 
   def __del__(self):
     if SpotifyNotify and SpotifyNotify.tmpfile:
@@ -45,6 +45,11 @@ class SpotifyNotify():
       return fun(self.notifyservice)
     except:
       self.notifyservice = None
+
+  def name_owner_changed(self, name, before, after):
+    if after and name == "org.mpris.MediaPlayer2.spotify":
+      self.spotify = self.bus.get_object("org.mpris.MediaPlayer2.spotify", "/org/mpris/MediaPlayer2")
+      self.spotify.connect_to_signal("PropertiesChanged", self.track_changed)
 
   def track_changed(self, interface, changed_props, invalidated_props):
     metadata = changed_props.get("Metadata", {})
